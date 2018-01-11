@@ -88,7 +88,7 @@
 
   getImages = function(title, callback) {
     var url;
-    url = "http://en.wikipedia.org/w/api.php?action=query&prop=images&format=json&titles=" + title + "&callback=?&imlimit=500";
+    url = "https://en.wikipedia.org/w/api.php?action=query&prop=images&format=json&titles=" + title + "&callback=?&imlimit=500";
     return $.getJSON(url, function(data) {
       var images, page, pageId, _ref;
       images = [];
