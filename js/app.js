@@ -42,7 +42,7 @@
       return;
     }
     seen["" + lat + ":" + lon] = true;
-    url = ("http://api.geonames.org/findNearbyWikipediaJSON?lat=" + lat + "&lng=" + lon + "&radius=10&username=wikimedia&maxRows=") + pageSize;
+    url = ("https://secure.geonames.org/findNearbyWikipediaJSON?lat=" + lat + "&lng=" + lon + "&radius=10&username=wikimedia&maxRows=") + pageSize;
     console.log(url);
     $.ajax({
       url: url,
