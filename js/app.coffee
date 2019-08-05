@@ -26,7 +26,7 @@ display = =>
   if seen["#{lat}:#{lon}"]
     return
   seen["#{lat}:#{lon}"] = true
-  url = "http://api.geonames.org/findNearbyWikipediaJSON?lat=#{lat}&lng=#{lon}&radius=10&username=wikimedia&maxRows=" + pageSize
+  url = "https://api.geonames.org/findNearbyWikipediaJSON?lat=#{lat}&lng=#{lon}&radius=10&username=wikimedia&maxRows=" + pageSize
   console.log url
   $.ajax url: url, dataType: "jsonp", success: articles
   setTimeout locate, refreshRate
@@ -56,7 +56,7 @@ checkImages = =>
         .slideDown()
 
 getImages = (title, callback) =>
-  url = "http://en.wikipedia.org/w/api.php?action=query&prop=images&format=json&titles=#{title}&callback=?&imlimit=500"
+  url = "https://en.wikipedia.org/w/api.php?action=query&prop=images&format=json&titles=#{title}&callback=?&imlimit=500"
   $.getJSON url, (data) ->
     images = []
     for pageId, page of data.query.pages
