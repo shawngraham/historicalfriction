@@ -10,7 +10,18 @@
       <script src="js/jquery.ba-bbq.js"></script>
      <script src="https://code.jquery.com/jquery-3.0.0.js"></script>
 <script src="https://code.jquery.com/jquery-migrate-3.1.0.js"></script>
+<script>
 
+jQuery.browser = {};
+(function () {
+jQuery.browser.msie = false;
+jQuery.browser.version = 0;
+if (navigator.userAgent.match(/MSIE ([0-9]+)\./)) {
+jQuery.browser.msie = true;
+jQuery.browser.version = RegExp.$1;
+}
+})();
+</script>
 
     <meta name="viewport" content="height=device-height, width=device-width, initial-scale=1.0">
     <link href="css/bootstrap.min.css" rel="stylesheet"></link>
