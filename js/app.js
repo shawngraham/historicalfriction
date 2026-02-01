@@ -369,15 +369,23 @@ const App = (() => {
     if (!micBtn) return;
 
     micBtn.addEventListener('click', async () => {
-      // Initialize Moonshine on first click
+      // Initialize Moonshine on first click — must fully complete
+      // before we try to toggle listening
       if (!VoiceCommands.isAvailable() && !VoiceCommands.isLoading()) {
         await VoiceCommands.init(
           _handleVoiceCommand,
           _handleTranscriptUpdate,
           _handleVoiceStatusChange,
         );
+
+        // After init, automatically start listening if it loaded OK
+        if (VoiceCommands.isAvailable()) {
+          await VoiceCommands.startListening();
+        }
+        return;
       }
 
+      // Already initialized — toggle on/off
       if (VoiceCommands.isAvailable()) {
         await VoiceCommands.toggle();
       }
