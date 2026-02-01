@@ -1,0 +1,15 @@
+{
+  "name": "historicalfriction",
+  "version": "2.0.0",
+  "description": "The past thickens the air. Walk through history, hear it speak.",
+  "private": true,
+  "scripts": {
+    "start": "npx serve .",
+    "dev": "npx serve . --listen 8080"
+  },
+  "license": "CC0-1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shawngraham/historicalfriction"
+  }
+}
