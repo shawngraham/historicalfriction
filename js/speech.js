@@ -103,6 +103,10 @@ const Speech = (() => {
     utterance.rate = entry.rate;
     utterance.volume = entry.volume;
 
+    utterance.onstart = () => {
+      _notifySpeakingState(true);
+    };
+
     utterance.onend = () => {
       // If this article has no more chunks, mark it done
       if (entry.chunks.length === 0) {
@@ -110,8 +114,10 @@ const Speech = (() => {
         _speaking.delete(url);
         _onSoundingChange?.(entry.article, false);
       }
+      // If nothing left at all, notify that TTS is done
+      const anyLeft = Array.from(_speaking.values()).some(e => e.chunks.length > 0);
+      if (!anyLeft) _notifySpeakingState(false);
       // Schedule the next chunk from the next article
-      // Use a tiny delay so the browser doesn't merge utterances
       _schedulerTimer = setTimeout(_scheduleNext, 50);
     };
 
@@ -119,6 +125,7 @@ const Speech = (() => {
       entry.article.sounding = false;
       _speaking.delete(url);
       _onSoundingChange?.(entry.article, false);
+      if (_speaking.size === 0) _notifySpeakingState(false);
       _schedulerTimer = setTimeout(_scheduleNext, 50);
     };
 
@@ -197,11 +204,13 @@ const Speech = (() => {
     utterance.onstart = () => {
       article.sounding = true;
       _onSoundingChange?.(article, true);
+      _notifySpeakingState(true);
     };
 
     utterance.onend = () => {
       article.sounding = false;
       _onSoundingChange?.(article, false);
+      _notifySpeakingState(false);
     };
 
     speechSynthesis.speak(utterance);
@@ -218,6 +227,8 @@ const Speech = (() => {
     utterance.pitch = 1.0;
     utterance.rate = 1.0;
     utterance.volume = 0.9;
+    utterance.onstart = () => _notifySpeakingState(true);
+    utterance.onend = () => _notifySpeakingState(false);
     speechSynthesis.speak(utterance);
   }
 
@@ -257,6 +268,21 @@ const Speech = (() => {
     _onSoundingChange = cb;
   }
 
+  // Callback fired when any TTS starts or all TTS stops,
+  // so other systems (e.g. mic) can mute during output.
+  let _onSpeakingStateChange = null;
+  function onSpeakingStateChange(cb) {
+    _onSpeakingStateChange = cb;
+  }
+
+  function _notifySpeakingState(speaking) {
+    _onSpeakingStateChange?.(speaking);
+  }
+
+  function isSpeaking() {
+    return _speaking.size > 0 || speechSynthesis.speaking;
+  }
+
   function currentlySpeaking() {
     return Array.from(_speaking.keys());
   }
@@ -271,7 +297,9 @@ const Speech = (() => {
     resume,
     isPaused,
     isAvailable,
+    isSpeaking,
     onSoundingChange,
+    onSpeakingStateChange,
     currentlySpeaking,
   };
 })();

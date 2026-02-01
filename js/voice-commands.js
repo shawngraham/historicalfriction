@@ -11,6 +11,7 @@ const VoiceCommands = (() => {
   let _listening = false;
   let _available = false;
   let _loading = false;
+  let _muted = false;           // true while TTS is speaking (ignore transcripts)
   let _onCommand = null;        // callback(command, args)
   let _onTranscript = null;     // callback(text)
   let _onStatusChange = null;   // callback(status)
@@ -131,6 +132,13 @@ const VoiceCommands = (() => {
    */
   function _handleTranscript(text) {
     if (!text || !text.trim()) return;
+    // While TTS is playing, the mic picks up the speaker output.
+    // Discard any transcripts generated during TTS to prevent
+    // feedback loops (app hears itself → triggers new commands).
+    if (_muted) {
+      console.log('Voice command: muted (TTS active), ignoring:', text);
+      return;
+    }
 
     const trimmed = text.trim();
     _onTranscript?.(trimmed);
@@ -148,12 +156,10 @@ const VoiceCommands = (() => {
       }
     }
 
-    // No command matched — treat as a filter/search if it's a noun phrase
-    // (only if it's more than one character to avoid spurious triggers)
-    if (trimmed.length > 2) {
-      console.log('Voice command: unmatched, treating as filter:', trimmed);
-      _onCommand?.('filter', trimmed);
-    }
+    // No command matched — log it but don't act on it.
+    // The catch-all filter was too aggressive and caused spurious
+    // triggers from background noise and TTS bleed-through.
+    console.log('Voice command: unmatched, ignoring:', trimmed);
   }
 
   /**
@@ -215,11 +221,28 @@ const VoiceCommands = (() => {
     return _loading;
   }
 
+  /**
+   * Mute: ignore all transcripts (call when TTS starts speaking).
+   */
+  function mute() {
+    _muted = true;
+  }
+
+  /**
+   * Unmute: resume processing transcripts (call when TTS finishes).
+   * Uses a short delay to let any trailing audio clear the mic buffer.
+   */
+  function unmute() {
+    setTimeout(() => { _muted = false; }, 600);
+  }
+
   return {
     init,
     startListening,
     stopListening,
     toggle,
+    mute,
+    unmute,
     isListening,
     isAvailable,
     isLoading,
