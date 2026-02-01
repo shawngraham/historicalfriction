@@ -35,6 +35,17 @@ const App = (() => {
     // Set up speech sounding callback for UI glow
     Speech.onSoundingChange(_updateArticleSounding);
 
+    // Mute voice recognition while TTS is speaking to prevent
+    // the microphone from picking up the speaker output and
+    // creating a feedback loop of phantom commands.
+    Speech.onSpeakingStateChange((isSpeaking) => {
+      if (isSpeaking) {
+        VoiceCommands.mute();
+      } else {
+        VoiceCommands.unmute();
+      }
+    });
+
     // Start geolocation
     _startGeolocation();
 
