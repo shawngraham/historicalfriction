@@ -104,7 +104,7 @@ const VoiceCommands = (() => {
       );
 
       _transcriber = new _MoonshineModule.MicrophoneTranscriber(
-        'moonshine/tiny',
+        'model/tiny',
         {
           onTranscriptionCommitted(text) {
             _handleTranscript(text);
@@ -160,7 +160,11 @@ const VoiceCommands = (() => {
    * Start listening.
    */
   async function startListening() {
-    if (!_available || !_transcriber) return;
+    if (!_available || !_transcriber) {
+      console.warn('Moonshine not available — cannot start listening');
+      _onStatusChange?.('error');
+      return;
+    }
     if (_listening) return;
 
     try {
@@ -168,7 +172,8 @@ const VoiceCommands = (() => {
       _listening = true;
       _onStatusChange?.('listening');
     } catch (e) {
-      console.warn('Failed to start Moonshine:', e);
+      console.warn('Failed to start Moonshine transcriber:', e);
+      _listening = false;
       _onStatusChange?.('error');
     }
   }
