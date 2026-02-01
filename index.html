@@ -1,75 +1,107 @@
-<!doctype html>
-<html>
-	<head>
- 
-<script src="speakClient.js"></script>
-<script src="https://code.jquery.com/jquery-1.9.1.min.js"></script>
-      <script src="https://code.jquery.com/jquery-migrate-1.1.0.js"></script>
-      <script src="js/bootstrap.min.js"></script>
-      <script src="js/modernizr-1.6.min.js"></script>
-      <script src="js/jquery.ba-bbq.js"></script>
-      
-      
-
-<script src="js/jquery-ui.min.js" type="text/javascript"></script>
-<script type="text/javascript">
-    jQuery.browser = {};
-    (function () {
-        jQuery.browser.msie = false;
-        jQuery.browser.version = 0;
-        if (navigator.userAgent.match(/MSIE ([0-9]+)\./)) {
-            jQuery.browser.msie = true;
-            jQuery.browser.version = RegExp.$1;
-        }
-    })();
-</script>
-
-<script src="js/app.js"></script>
-
-    <meta name="viewport" content="height=device-height, width=device-width, initial-scale=1.0">
-    <link href="css/bootstrap.min.css" rel="stylesheet"></link>
-    <link href="css/bootstrap-responsive.min.css" rel="stylesheet"></link>
-    <style>
-      #results li {
-        list-style: none;
-        border: thin solid #dddddd;
-        margin: 10px;
-        padding: 10px;
-      }
-      .needImage {
-        background-color: pink;
-      }
-      #summary {
-      }
-    </style>
-    </head>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Historical Friction</title>
+  <meta name="description" content="The past thickens the air. Walk through history, hear it speak.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
 <body>
 
-       <div id="audio"></div>   
-      <div class="container">
+  <div class="container">
 
-        <div class="row">
-        <div class="masthead span6 offset3 text-center">
-		<h2> Historical Friction </h2> ~ built on Ed Summers' 
-          <h3>ici<span class="hidden-phone"> - Wikipedia Articles <em>Here</em></span></h3>
-        </div>
-        </div>
+    <header>
+      <h1>Historical Friction</h1>
+      <p class="subtitle">~ the past thickens the air ~</p>
+      <p class="tagline">
+        History is all around us. The voices of the past thicken the air, calling out
+        for your attention. When it all gets too much, pull the ear-buds out, stop, and
+        look at where you are with fresh eyes, in the new silence.
+      </p>
+    </header>
 
-        <div class="row">
-          <br><small>Do you have your location turned on? Do you have autoplay turned on? Please do for this!
-		 <br><br><h4>History is all around us. The voices of the past thicken the air, calling out for your attention. When it all gets too much, pull the ear-buds out, stop, and look at where you are with fresh eyes, in the new silence...</h4></span><br>
-         
-		</div>
+    <!-- Location status -->
+    <div id="status-bar">
+      <span class="dot loading"></span>
+      <span class="status-text">Waiting for location...</span>
+    </div>
 
-        <div class="row">
-          <ul id="results" class="span6 offset3">
-          </ul>
-        </div>
-	<br>(The original code for this was at <a href=https://github.com/edsu/ici>Inkdroid.org</a>. It works on Firefox in the browser, and on Firefox for Android. You might have to wait a moment for the voices to kick in.<br><br>
-		 Source is on <a href="github.com/shawngraham/historicalfriction"> Github, on the repo's gh-pages branch</a>.  Shawn and <a href="http://www.dead-mens-eyes.org/">Stuart Eve</a> used a hack of <a href="https://github.com/mattytemple/speak-js">speak.js</a> to give the history around us a voice, as per the idea of 'Historical Friction' detailed at <a href="http://electricarchaeology.ca/2013/04/24/historical-friction/">electricarchaeology.ca</a>. )
-      </div>
+    <!-- Voice interaction status -->
+    <div id="voice-status">
+      <span class="mic-icon">&#x1F399;</span> Tap mic to enable voice commands
+    </div>
+    <div id="moonshine-loading" style="display:none;">
+      Loading speech model...
+      <progress></progress>
+    </div>
 
-      
+    <!-- Live transcript -->
+    <div id="transcript" aria-live="polite"></div>
+
+    <!-- Filter indicator -->
+    <div id="filter-indicator" style="display:none; text-align:center; font-family:var(--font-ui); font-size:0.75rem; color:var(--accent); margin-bottom:0.5rem;"></div>
+
+    <!-- Mode switcher -->
+    <nav id="mode-switcher" aria-label="Sonification mode">
+      <button data-mode="voices" class="active">
+        <span class="mode-label">Voices</span>
+        <span class="mode-desc">overlapping speech</span>
+      </button>
+      <button data-mode="drone">
+        <span class="mode-label">Drone</span>
+        <span class="mode-desc">ambient tones</span>
+      </button>
+      <button data-mode="musical">
+        <span class="mode-label">Music</span>
+        <span class="mode-desc">generative notes</span>
+      </button>
+      <button data-mode="whisper">
+        <span class="mode-label">Whisper</span>
+        <span class="mode-desc">ghostly murmurs</span>
+      </button>
+    </nav>
+
+    <!-- Controls -->
+    <div id="controls">
+      <button id="play-pause">Play</button>
+      <label for="volume-slider" class="sr-only">Volume</label>
+      <label>Vol</label>
+      <input id="volume-slider" type="range" min="0" max="1" step="0.05" value="0.7">
+      <button id="mic-toggle" title="Toggle voice commands">&#x1F399;</button>
+    </div>
+
+    <!-- Article list -->
+    <main>
+      <ul id="results" aria-label="Nearby Wikipedia articles">
+      </ul>
+    </main>
+
+    <footer>
+      <p>
+        Built on <a href="https://github.com/edsu/ici">ici</a> by Ed Summers.
+        Voice interaction powered by <a href="https://dev.moonshine.ai/js/">Moonshine JS</a>.
+      </p>
+      <p>
+        <a href="https://github.com/shawngraham/historicalfriction">Source on GitHub</a>
+        &middot;
+        The idea of "historical friction" is detailed at
+        <a href="https://electricarchaeology.ca/2013/04/24/historical-friction/">Electric Archaeology</a>.
+      </p>
+      <p>
+        Shawn Graham &amp; <a href="https://www.dead-mens-eyes.org/">Stuart Eve</a>
+        &middot; CC0 Public Domain
+      </p>
+    </footer>
+
+  </div>
+
+  <!-- Scripts: order matters (modules depend on earlier ones) -->
+  <script src="js/articles.js"></script>
+  <script src="js/sonification.js"></script>
+  <script src="js/speech.js"></script>
+  <script src="js/voice-commands.js"></script>
+  <script src="js/app.js"></script>
 
 </body>
 </html>
