@@ -1,193 +1,144 @@
 /**
  * speech.js — Text-to-speech for Voices and Whisper modes
  *
- * The Web Speech API's speechSynthesis is a single serial queue — utterances
- * play one after another, never concurrently. To create the overlapping-voices
- * effect, we split each article's text into short chunks and interleave chunks
- * from different articles in a round-robin schedule. The rapid alternation
- * between different pitches/rates creates the impression of simultaneous
- * speakers — voices interrupting and talking over each other.
+ * The Web Speech API's speechSynthesis is a single serial queue — one
+ * utterance at a time. To get truly simultaneous overlapping voices,
+ * each article is spoken inside its own hidden <iframe>, which has an
+ * independent speechSynthesis context. Multiple iframes speak at once,
+ * creating a genuine cacophony.
+ *
+ * Solo and announce modes use the main window's speechSynthesis directly.
  */
 
 const Speech = (() => {
   let _available = 'speechSynthesis' in window;
   let _paused = false;
 
-  // Track which articles are currently being spoken
-  const _speaking = new Map(); // articleUrl → { article, chunks, pitch, rate, volume }
+  // Pool of speaking iframes: articleUrl → { iframe, article, pitch, rate, volume }
+  const _speakers = new Map();
 
-  // Round-robin scheduler state
-  let _schedulerRunning = false;
-  let _schedulerTimer = null;
+  // Container for hidden iframes
+  let _container = null;
 
-  // ── Chunk splitter ──────────────────────────────────
+  function _ensureContainer() {
+    if (_container) return;
+    _container = document.createElement('div');
+    _container.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;';
+    _container.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(_container);
+  }
 
   /**
-   * Split text into short spoken phrases (~4–8 words each).
-   * Splits on sentence boundaries first, then subdivides long sentences.
+   * Create a hidden iframe and speak text inside it.
+   * Each iframe has its own speechSynthesis — they play concurrently.
    */
-  function _chunkText(text, wordsPerChunk) {
-    if (!text) return [];
-    // Split into sentences
-    const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
-    const chunks = [];
-    for (const sentence of sentences) {
-      const words = sentence.trim().split(/\s+/);
-      for (let i = 0; i < words.length; i += wordsPerChunk) {
-        const slice = words.slice(i, i + wordsPerChunk).join(' ');
-        if (slice) chunks.push(slice);
-      }
-    }
-    return chunks;
-  }
+  function _speakInIframe(article, text, pitch, rate, volume) {
+    const url = article.url;
+    if (_speakers.has(url)) return; // already speaking this article
 
-  // ── Round-robin scheduler ───────────────────────────
+    _ensureContainer();
 
-  /**
-   * The scheduler cycles through all active articles, speaking one chunk
-   * from each in turn. This interleaving creates the perception of
-   * overlapping voices even though only one utterance plays at a time.
-   */
-  function _startScheduler() {
-    if (_schedulerRunning) return;
-    _schedulerRunning = true;
-    _scheduleNext();
-  }
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'width:0;height:0;border:none;';
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+    _container.appendChild(iframe);
 
-  function _stopScheduler() {
-    _schedulerRunning = false;
-    if (_schedulerTimer) {
-      clearTimeout(_schedulerTimer);
-      _schedulerTimer = null;
+    const entry = { iframe, article, pitch, rate, volume, done: false };
+    _speakers.set(url, entry);
+
+    // The iframe needs a moment to initialize its window
+    iframe.addEventListener('load', () => {
+      _speakInsideFrame(entry, text);
+    });
+
+    // Trigger load by writing a minimal document
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write('<!DOCTYPE html><html><head></head><body></body></html>');
+      doc.close();
     }
   }
 
-  function _scheduleNext() {
-    if (!_schedulerRunning || _paused) return;
-
-    // Collect all entries that still have chunks left
-    const active = [];
-    for (const [url, entry] of _speaking) {
-      if (entry.chunks.length > 0) {
-        active.push([url, entry]);
-      }
-    }
-
-    if (active.length === 0) {
-      // All done — clean up
-      _schedulerRunning = false;
-      for (const [url, entry] of _speaking) {
-        entry.article.sounding = false;
-        _onSoundingChange?.(entry.article, false);
-      }
-      _speaking.clear();
+  function _speakInsideFrame(entry, text) {
+    const win = entry.iframe.contentWindow;
+    if (!win || !win.speechSynthesis) {
+      // iframe speechSynthesis not available — clean up
+      _removeSpeaker(entry.article.url);
       return;
     }
-
-    // Pick the next entry in round-robin order
-    // Use a rotating index stored on the function
-    if (_scheduleNext._index == null) _scheduleNext._index = 0;
-    _scheduleNext._index = _scheduleNext._index % active.length;
-
-    const [url, entry] = active[_scheduleNext._index];
-    _scheduleNext._index = (_scheduleNext._index + 1) % Math.max(active.length, 1);
-
-    const chunk = entry.chunks.shift();
 
     // Mark as sounding
     entry.article.sounding = true;
     _onSoundingChange?.(entry.article, true);
+    _notifySpeakingState(true);
 
-    const utterance = new SpeechSynthesisUtterance(chunk);
+    const utterance = new win.SpeechSynthesisUtterance(text);
     utterance.pitch = entry.pitch;
     utterance.rate = entry.rate;
     utterance.volume = entry.volume;
 
-    utterance.onstart = () => {
-      _notifySpeakingState(true);
-    };
-
     utterance.onend = () => {
-      // If this article has no more chunks, mark it done
-      if (entry.chunks.length === 0) {
-        entry.article.sounding = false;
-        _speaking.delete(url);
-        _onSoundingChange?.(entry.article, false);
-      }
-      // If nothing left at all, notify that TTS is done
-      const anyLeft = Array.from(_speaking.values()).some(e => e.chunks.length > 0);
-      if (!anyLeft) _notifySpeakingState(false);
-      // Schedule the next chunk from the next article
-      _schedulerTimer = setTimeout(_scheduleNext, 50);
+      entry.done = true;
+      _removeSpeaker(entry.article.url);
     };
 
     utterance.onerror = () => {
-      entry.article.sounding = false;
-      _speaking.delete(url);
-      _onSoundingChange?.(entry.article, false);
-      if (_speaking.size === 0) _notifySpeakingState(false);
-      _schedulerTimer = setTimeout(_scheduleNext, 50);
+      entry.done = true;
+      _removeSpeaker(entry.article.url);
     };
 
-    speechSynthesis.speak(utterance);
+    win.speechSynthesis.speak(utterance);
+  }
+
+  function _removeSpeaker(articleUrl) {
+    const entry = _speakers.get(articleUrl);
+    if (!entry) return;
+
+    entry.article.sounding = false;
+    _onSoundingChange?.(entry.article, false);
+
+    // Cancel speech in the iframe if still going
+    try {
+      const win = entry.iframe.contentWindow;
+      if (win && win.speechSynthesis) win.speechSynthesis.cancel();
+    } catch (e) { /* ignore */ }
+
+    // Remove the iframe from DOM
+    entry.iframe.remove();
+    _speakers.delete(articleUrl);
+
+    // If no speakers left, notify that all TTS is done
+    if (_speakers.size === 0) {
+      _notifySpeakingState(false);
+    }
   }
 
   // ── Public: Voices mode ─────────────────────────────
 
-  /**
-   * Enqueue an article for Voices mode. Its text is chunked and fed
-   * into the round-robin scheduler so it interleaves with other articles.
-   */
   function speakVoices(article) {
     if (!_available || _paused) return;
-    const url = article.url;
-    if (_speaking.has(url)) return;
-
-    const fullText = article.title + '. ' + (article.summary || '');
-    const chunks = _chunkText(fullText, 5); // ~5 words per chunk
-    if (chunks.length === 0) return;
-
-    _speaking.set(url, {
-      article,
-      chunks,
-      pitch: 0.5 + Math.random() * 1.5,  // 0.5–2.0
-      rate: 0.8 + Math.random() * 0.4,    // 0.8–1.2
-      volume: 0.8,
-    });
-
-    _startScheduler();
+    const text = article.title + '. ' + (article.summary || '');
+    const pitch = 0.5 + Math.random() * 1.5;  // 0.5–2.0
+    const rate = 0.8 + Math.random() * 0.4;    // 0.8–1.2
+    _speakInIframe(article, text, pitch, rate, 0.8);
   }
 
   // ── Public: Whisper mode ────────────────────────────
 
-  /**
-   * Enqueue an article for Whisper mode. Same interleaving, but with
-   * low volume, slow rate, low pitch — ghostly murmurs.
-   */
   function speakWhisper(article) {
     if (!_available || _paused) return;
-    const url = article.url;
-    if (_speaking.has(url)) return;
-
-    const fullText = article.title + '. ' + (article.summary || '');
-    const chunks = _chunkText(fullText, 3); // shorter chunks for whisper
-    if (chunks.length === 0) return;
-
-    _speaking.set(url, {
-      article,
-      chunks,
-      pitch: 0.3 + Math.random() * 0.5,   // low, breathy
-      rate: 0.5 + Math.random() * 0.3,     // slow
-      volume: 0.15 + Math.random() * 0.15, // very quiet
-    });
-
-    _startScheduler();
+    const text = article.title + '. ' + (article.summary || '');
+    const pitch = 0.3 + Math.random() * 0.5;   // low, breathy
+    const rate = 0.5 + Math.random() * 0.3;     // slow
+    const volume = 0.15 + Math.random() * 0.15; // very quiet
+    _speakInIframe(article, text, pitch, rate, volume);
   }
 
   // ── Public: Solo mode ───────────────────────────────
 
   /**
-   * Speak a single article clearly (for "what's here?" command).
+   * Speak a single article clearly, using the main window's speechSynthesis.
    * Cancels all other speech first.
    */
   function speakSolo(article) {
@@ -218,9 +169,6 @@ const Speech = (() => {
 
   // ── Public: Announce ────────────────────────────────
 
-  /**
-   * Speak arbitrary text clearly (for status announcements).
-   */
   function announce(text) {
     if (!_available) return;
     const utterance = new SpeechSynthesisUtterance(text);
@@ -235,24 +183,37 @@ const Speech = (() => {
   // ── Public: Control ─────────────────────────────────
 
   function stopAll() {
-    _stopScheduler();
-    speechSynthesis.cancel();
-    for (const [url, entry] of _speaking) {
-      entry.article.sounding = false;
-      _onSoundingChange?.(entry.article, false);
+    // Snapshot keys first — _removeSpeaker mutates the map
+    const urls = Array.from(_speakers.keys());
+    for (const url of urls) {
+      _removeSpeaker(url);
     }
-    _speaking.clear();
+    // Stop main window speech (solo/announce)
+    speechSynthesis.cancel();
+    _notifySpeakingState(false);
   }
 
   function pause() {
     _paused = true;
+    // Pause each iframe's speechSynthesis
+    for (const [, entry] of _speakers) {
+      try {
+        const win = entry.iframe.contentWindow;
+        if (win && win.speechSynthesis) win.speechSynthesis.pause();
+      } catch (e) { /* ignore */ }
+    }
     speechSynthesis.pause();
   }
 
   function resume() {
     _paused = false;
+    for (const [, entry] of _speakers) {
+      try {
+        const win = entry.iframe.contentWindow;
+        if (win && win.speechSynthesis) win.speechSynthesis.resume();
+      } catch (e) { /* ignore */ }
+    }
     speechSynthesis.resume();
-    if (_speaking.size > 0) _startScheduler();
   }
 
   function isPaused() {
@@ -268,8 +229,6 @@ const Speech = (() => {
     _onSoundingChange = cb;
   }
 
-  // Callback fired when any TTS starts or all TTS stops,
-  // so other systems (e.g. mic) can mute during output.
   let _onSpeakingStateChange = null;
   function onSpeakingStateChange(cb) {
     _onSpeakingStateChange = cb;
@@ -280,11 +239,11 @@ const Speech = (() => {
   }
 
   function isSpeaking() {
-    return _speaking.size > 0 || speechSynthesis.speaking;
+    return _speakers.size > 0 || speechSynthesis.speaking;
   }
 
   function currentlySpeaking() {
-    return Array.from(_speaking.keys());
+    return Array.from(_speakers.keys());
   }
 
   return {
