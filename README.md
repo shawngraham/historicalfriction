@@ -1,3 +1,7 @@
+Hey, this one was neat but the whole 'voice control' thing didn't really pan out. Go see the version at [https://github.com/xlabCU/historicalfriction](https://github.com/xlabCU/historicalfriction) instead. 
+
+
+
 Historical Friction
 ==
 
